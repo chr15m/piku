@@ -451,15 +451,18 @@ def deploy_python(app, deltas={}):
     if exists(env_file):
         env.update(parse_settings(env_file, env))
 
-    # TODO: improve version parsing
-    # pylint: disable=unused-variable
-    version = int(env.get("PYTHON_VERSION", "3"))
-
     first_time = False
     if not exists(virtualenv_path):
+        python_version = env.get("PYTHON_VERSION", "3")
+        pyenv = join(environ['HOME'],'.pyenv','bin','pyenv')
+        if env.get("PYTHON_VERSION") and exists(pyenv) and python_version in command_output(pyenv + " install --list"):
+            call("{} install -s {}".format(pyenv, python_version))
+            python_binary = ".pyenv/versions/{}/bin/python".format(python_version)
+        else:
+            python_binary = "python{}".format(python_version[0])
         echo("-----> Creating virtualenv for '{}'".format(app), fg='green')
         makedirs(virtualenv_path)
-        call('virtualenv --python=python{version:d} {app:s}'.format(**locals()), cwd=ENV_ROOT, shell=True)
+        call('virtualenv --python={python_binary:s} {app:s}'.format(**locals()), cwd=ENV_ROOT, shell=True)
         first_time = True
 
     activation_script = join(virtualenv_path,'bin','activate_this.py')
@@ -715,14 +718,14 @@ def spawn_worker(app, kind, command, env, ordinal=1):
     if exists(join(env_path, "bin", "activate")):
         settings.append(('virtualenv', env_path))
 
-    python_version = int(env.get('PYTHON_VERSION','3'))
+    python_version = env.get('PYTHON_VERSION','3')
 
     if kind == 'wsgi':
         settings.extend([
             ('module',      command),
             ('threads',     env.get('UWSGI_THREADS','4')),
         ])
-        if python_version == 2:
+        if python_version.startswith("2"):
             settings.extend([
                 ('plugin',      'python'),
             ])
@@ -735,7 +738,7 @@ def spawn_worker(app, kind, command, env, ordinal=1):
                 settings.extend([
                     ('plugin',  'asyncio_python'),
                 ])
-        elif python_version == 3:
+        elif python_version.startswith("3"):
             settings.extend([
                 ('plugin',      'python3'),
             ])
