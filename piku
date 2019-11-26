@@ -36,7 +36,7 @@ else
     "")
       ssh ${sshflags} "$server" "$@" | grep -v "INTERNAL"
       ;;
-    apps|setup|setup:ssh)
+    apps|setup|setup:ssh|update)
       ssh ${sshflags} "$server" "$@"
       ;;
     *)
