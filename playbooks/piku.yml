@@ -18,7 +18,7 @@
 
     - name: Install Debian Packages
       apt:
-        pkg: ['bc', 'git', 'build-essential', 'libpcre3-dev', 'zlib1g-dev', 'python', 'python3', 'python3-pip', 'python3-dev', 'python-pip', 'python-setuptools', 'python3-setuptools', 'nginx', 'incron', 'acl']
+        pkg: ['bc', 'git', 'build-essential', 'libpcre3-dev', 'zlib1g-dev', 'python', 'python3', 'python3-pip', 'python3-dev', 'python-pip', 'python-setuptools', 'python3-setuptools', 'nginx', 'incron', 'acl', 'uwsgi-src']
         #, 'python-dev', 'python3', 'python3-virtualenv', 'python3-pip']
         update_cache: true
         state: present

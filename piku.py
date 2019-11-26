@@ -52,11 +52,23 @@ UWSGI_ROOT = abspath(join(PIKU_ROOT, "uwsgi"))
 UWSGI_LOG_MAXSIZE = '1048576'
 ACME_ROOT = environ.get('ACME_ROOT', join(environ['HOME'],'.acme.sh'))
 ACME_WWW = abspath(join(PIKU_ROOT, "acme"))
+PYENV_ROOT = environ.get('PYENV_ROOT', join(environ['HOME'],'.pyenv'))
+PYENV_SHIMS = join(PYENV_ROOT, "shims")
 
 # === Make sure we can access piku user-installed binaries === #
 
 if PIKU_BIN not in environ['PATH']:
     environ['PATH'] = PIKU_BIN + ":" + environ['PATH']
+
+if exists(PYENV_ROOT) and exists(PYENV_SHIMS):
+    environ["PYENV_ROOT"] = PYENV_ROOT
+    environ['PATH'] = PYENV_SHIMS + ":" + join(PYENV_ROOT, "bin") + ":" + environ['PATH']
+    environ["PYENV_SHELL"] = "bash"
+
+# export PYENV_ROOT="$HOME/.pyenv"
+# export PATH="$PYENV_ROOT/bin:$PATH"
+# export PATH="/home/piku/.pyenv/shims:${PATH}"
+# export PYENV_SHELL=bash
 
 # pylint: disable=anomalous-backslash-in-string
 NGINX_TEMPLATE = """
@@ -538,7 +550,9 @@ def deploy_python(app, deltas={}):
 
     virtualenv_path = join(ENV_ROOT, app)
     requirements = join(APP_ROOT, app, 'requirements.txt')
-    env_file = join(APP_ROOT, app, 'ENV')
+    app_path = join(APP_ROOT, app)
+    env_file = join(app_path, 'ENV')
+
     # Peek at environment variables shipped with repo (if any) to determine version
     env = {}
     if exists(env_file):
@@ -552,7 +566,18 @@ def deploy_python(app, deltas={}):
     if not exists(virtualenv_path):
         echo("-----> Creating virtualenv for '{}'".format(app), fg='green')
         makedirs(virtualenv_path)
-        call('virtualenv --python=python{version:d} {app:s}'.format(**locals()), cwd=ENV_ROOT, shell=True)
+        versionfile = join(APP_ROOT, app, ".python-version")
+        pyenv_version = open(versionfile).read().rstrip("\n")
+        pyenv_has_version = str(check_output("pyenv versions 2>&1 | grep ' {} '".format(pyenv_version), env=environ, shell=True))
+        if environ.get("PYENV_SHELL") and exists(versionfile):
+            PYTHON_BINARY = join(PYENV_SHIMS, "python")
+            environ["PYENV_DIR"] = app_path
+            # NO: environ["PYENV_VERSION"] = open(versionfile).read().rstrip("\n")
+            # env PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 3.6.8
+            # uwsgi --build-plugin /usr/src/uwsgi/plugins/python ./python3.6.8
+        else:
+            PYTHON_BINARY = "python{version:d}".format(**locals())
+        call('virtualenv --python={PYTHON_BINARY:s} {app:s}'.format(**locals()), cwd=ENV_ROOT, shell=True)
         first_time = True
 
     activation_script = join(virtualenv_path,'bin','activate_this.py')
@@ -837,7 +862,7 @@ def spawn_worker(app, kind, command, env, ordinal=1):
     if exists(join(env_path, "bin", "activate_this.py")):
         settings.append(('virtualenv', env_path))
 
-    if kind== 'jwsgi':
+    if kind == 'jwsgi':
         settings.extend([
             ('module', command),
             ('threads',     env.get('UWSGI_THREADS','4')),
