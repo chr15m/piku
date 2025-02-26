@@ -394,7 +394,10 @@ def do_deploy(app, deltas={}, newrev=None):
                     echo("-----> Exiting due to preflight command error value: {}".format(retval))
                     exit(retval)
                 workers.pop("preflight", None)
-            if exists(join(app_path, 'requirements.txt')) and found_app("Python"):
+            if "deploy" in workers:
+                settings.update(deploy_shellscript(app, deltas, workers["deploy"]))
+                workers.pop("deploy", None)
+            elif exists(join(app_path, 'requirements.txt')) and found_app("Python"):
                 settings.update(deploy_python(app, deltas))
             elif exists(join(app_path, 'pyproject.toml')) and which('poetry') and found_app("Python"):
                 settings.update(deploy_python_with_poetry(app, deltas))
@@ -774,6 +777,31 @@ def deploy_python_with_uv(app, deltas={}):
     return spawn_app(app, deltas)
 
 
+def deploy_shellscript(app, deltas={}, command=""):
+    """Deploy using a shell script."""
+
+    env_path = join(ENV_ROOT, app)
+    if not exists(env_path):
+        makedirs(env_path)
+
+    virtual = join(ENV_ROOT, app)
+    env_file = join(APP_ROOT, app, 'ENV')
+
+    env = {
+        'VIRTUAL_ENV': virtual,
+        "PATH": ':'.join([join(virtual, "bin"), join(app, ".bin"), environ['PATH']]),
+    }
+
+    if exists(env_file):
+        env.update(parse_settings(env_file, env))
+
+    echo("-----> Shell script deployment with {}".format(command), fg='green')
+
+    # Run the deployment command
+    call(command, cwd=join(APP_ROOT, app), env=env, shell=True)
+
+    return spawn_app(app, deltas)
+
 def deploy_identity(app, deltas={}):
     env_path = join(ENV_ROOT, app)
     if not exists(env_path):
@@ -790,6 +818,7 @@ def spawn_app(app, deltas={}):
     workers = parse_procfile(procfile)
     workers.pop("preflight", None)
     workers.pop("release", None)
+    workers.pop("deploy", None)
     ordinals = defaultdict(lambda: 1)
     worker_count = {k: 1 for k in workers.keys()}
 
