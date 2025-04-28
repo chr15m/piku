@@ -1,0 +1,56 @@
+name: Piku deployment testing
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      target:
+        image: ubuntu:latest
+        ports:
+          - 22
+        # Use sleep infinity to keep the container running, avoiding flag conflicts
+        options: >-
+          --entrypoint /bin/sleep
+          infinity
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up SSH in target container
+      run: |
+        docker exec ${{ job.services.target.id }} apt-get update
+        # Need DEBIAN_FRONTEND=noninteractive to avoid prompts during install
+        docker exec ${{ job.services.target.id }} env DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server sudo
+        # Ensure sshd directory exists
+        docker exec ${{ job.services.target.id }} mkdir -p /run/sshd
+        docker exec ${{ job.services.target.id }} service ssh start
+        # Create user, set password, add to sudo group (optional but often useful)
+        docker exec ${{ job.services.target.id }} useradd -m -s /bin/bash testuser
+        docker exec ${{ job.services.target.id }} bash -c 'echo "testuser:password" | chpasswd'
+        docker exec ${{ job.services.target.id }} adduser testuser sudo
+        # Allow password authentication for SSH & Root login (adjust as needed for security)
+        docker exec ${{ job.services.target.id }} sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        docker exec ${{ job.services.target.id }} sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+        docker exec ${{ job.services.target.id }} service ssh restart
+
+    - name: Install SSH client and sshpass on runner
+      run: sudo apt-get update && sudo apt-get install -y openssh-client sshpass
+
+    - name: Get target container IP
+      run: echo "TARGET_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${{ job.services.target.id }})" >> $GITHUB_ENV
+
+    - name: Wait for SSH service to be ready
+      run: |
+        echo "Waiting for SSH on $TARGET_IP..."
+        for i in {1..10}; do
+          sshpass -p 'password' ssh -o ConnectTimeout=1 -o StrictHostKeyChecking=no -o BatchMode=yes testuser@$TARGET_IP "echo SSH is ready" && break
+          echo "Attempt $i failed, retrying..."
+          sleep 2
+        done
+        sshpass -p 'password' ssh -o StrictHostKeyChecking=no testuser@$TARGET_IP "echo SSH connection successful"
+
+    - name: SSH into target and run command
+      run: |
+        sshpass -p 'password' ssh -o StrictHostKeyChecking=no testuser@$TARGET_IP "echo hello from target"
